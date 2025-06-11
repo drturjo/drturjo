@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nafiul Huda Turjo // System Online</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --background: #0a0a0a;
+            --payload: #00ff41;
+            --prompt: #888888;
+            --command-text: #ddd;
+            --fluff: #ffffff;
+            --error: #ff4141;
+            --button-border: #333333;
+            --button-hover-bg: #00ff41;
+            --button-hover-text: #0a0a0a;
+            font-size: clamp(0.9rem, 2.5vw, 1.1rem);
+        }
+        ::selection { background: var(--payload); color: var(--background); }
+
+        body {
+            background-color: var(--background);
+            color: var(--payload);
+            font-family: 'Fira Code', monospace;
+            margin: 0;
+            padding: 1rem 1rem 8rem 1rem;
+            overflow-x: hidden;
+        }
+        body.typing { overflow: hidden; }
+
+        /* PRE-LOADER */
+        #preloader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: var(--background); display: flex;
+            justify-content: center; align-items: center; z-index: 100;
+        }
+        #preloader-content { text-align: center; }
+        #preloader-text span {
+            display: block; line-height: 1.8; opacity: 0;
+            animation: fadeIn 0.5s forwards;
+        }
+        #preloader-art {
+            font-size: 0.7em; opacity: 0;
+            animation: fadeIn 0.5s 1s forwards;
+        }
+        #user-info-container {
+            position: absolute; bottom: 1rem; left: 1rem;
+            font-size: 0.7em; text-align: left;
+            opacity: 0; transition: opacity 1s ease 2s; /* Fades in after main text */
+        }
+        @keyframes fadeIn { to { opacity: 1; } }
+
+        .error { color: var(--error); }
+        .dots::after {
+            content: '.'; animation: blinkingDots 1.5s infinite;
+        }
+        @keyframes blinkingDots {
+            0%, 20% { content: '.'; } 40% { content: '..'; } 60%, 100% { content: '...'; }
+        }
+
+        /* TERMINAL */
+        #terminal-container.hidden { display: none; }
+        .prompt-line { display: flex; align-items: flex-start; }
+        .prompt { color: var(--prompt); margin-right: 0.5em; flex-shrink: 0; }
+        .command-text { color: var(--command-text); word-break: break-all; }
+        .hacker-fluff {
+            color: var(--fluff); font-size: 0.8em; opacity: 0.7;
+            line-height: 1.4; padding-top: 0.5em;
+        }
+        a { color: inherit; }
+        .comment { color: #808080; }
+        .accent { font-weight: bold; }
+        
+        .progress-bar { display: flex; align-items: center; white-space: nowrap; }
+        .progress-label { width: 10ch; }
+        .bar-filled { color: var(--payload); }
+        .bar-empty { opacity: 0.3; }
+
+        /* FIXED COMMAND BAR */
+        #commands {
+            position: fixed; bottom: 0; left: 0; width: 100%;
+            display: flex; flex-wrap: wrap; gap: 0.5rem;
+            padding: 1rem; background-color: rgba(10, 10, 10, 0.8);
+            backdrop-filter: blur(5px); border-top: 1px solid var(--button-border);
+            box-sizing: border-box;
+        }
+        #commands button {
+            background: none; border: 1px solid var(--button-border); color: var(--prompt);
+            font-family: inherit; font-size: 0.9em; padding: 0.4rem 0.8rem;
+            cursor: pointer; transition: all 0.2s; display: none;
+        }
+        #commands button.visible { display: block; }
+        #commands button:hover, #commands button:focus {
+            border-color: var(--button-hover-bg); background-color: var(--button-hover-bg);
+            color: var(--button-hover-text); outline: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="preloader">
+        <div id="preloader-content">
+            <pre id="preloader-art" class="comment">
+      _   _    __    ____    ___   ____   ____
+     ( )_( )  /__\  (  _ \  / __) / ___) / ___)
+      ) _ (  /(__)\  )   / ( (__  \___ \ \___ \
+     (_) (_) (__)(__)(_)\_) \___) (____/ (____/
+            </pre>
+            <div id="preloader-text"></div>
+        </div>
+        <div id="user-info-container" class="comment"></div>
+    </div>
+    
+    <div id="terminal-container" class="hidden">
+        <div id="output"></div>
+    </div>
+    <div id="commands">
+        <button data-command="about" data-next-command="skills">breach mainframe.bio</button>
+        <button data-command="skills" data-next-command="projects">escalate privileges</button>
+        <button data-command="projects" data-next-command="socials">decrypt shadow file</button>
+        <button data-command="socials" data-next-command="contact">scan network nodes</button>
+        <button data-command="contact">establish secure comms</button>
+        <button data-command="clear">clear</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const preloaderText = document.getElementById('preloader-text');
+            const terminalContainer = document.getElementById('terminal-container');
+            const output = document.getElementById('output');
+            const commandsDiv = document.getElementById('commands');
+            let currentVisibleCommands = [];
+
+            const SPEED_PAYLOAD = 15;
+            const FLUFF_DELAY = 30;
+
+            // ========================= YOUR INFO HERE =========================
+            function createProgressBar(label, percentage) {
+                const barWidth = 10;
+                const filledCount = Math.round(barWidth * (percentage / 100));
+                const emptyCount = barWidth - filledCount;
+                const filled = '█'.repeat(filledCount);
+                const empty = '░'.repeat(emptyCount);
+                return `<div class="progress-bar"><span class="progress-label">${label.padEnd(10)}</span><span>[<span class="bar-filled">${filled}</span><span class="bar-empty">${empty}</span>] ${percentage}%</span></div>`;
+            }
+            
+            const content = {
+                about: `
+<br><span class="comment">// Mainframe breached. manifest.txt decrypted.</span><br>
+<span class="accent">NAME:</span>         Nafiul Huda Turjo<br>
+<span class="accent">ROLE:</span>         Developer & Digital Architect<br><br>
+<span class="accent">DESCRIPTION:</span>  I build things for the web and beyond. My passion lies in turning complex problems into elegant, efficient code. From front-end interfaces to back-end logic, I thrive on the challenge of creating robust and impactful digital experiences. I believe the best developers are not just coders, but architects who design the future, one line at a time.
+`,
+                skills: `
+<br><span class="comment">// Privileges escalated. Accessing skill matrix.</span><br>
+${createProgressBar('Python', 95)}
+${createProgressBar('JavaScript', 95)}
+${createProgressBar('HTML/CSS', 98)}
+${createProgressBar('C/C++', 85)}
+${createProgressBar('C#', 80)}
+${createProgressBar('PHP', 70)}
+<br>
+<span class="accent">COMPETENCIES:</span> Full-Stack Dev, Algorithmic Thinking, System Design, AI Concepts
+`,
+                projects: `
+<br><span class="comment">// Encryption on shadow_file.dat broken.</span><br>
+<span class="accent">PROJECT 01:</span>   [Your Project Name Here]<br>
+<span class="accent">DESCRIPTION:</span>  [A brief one-line description of the project.]<br>
+<span class="accent">LINK:</span>         <a href="https://github.com/yourusername" target="_blank">github.com/yourusername/repo1</a>
+<br><br>
+<span class="accent">PROJECT 02:</span>   [Your Next Project Name Here]<br>
+<span class="accent">DESCRIPTION:</span>  [Brief one-line description.]<br>
+<span class="accent">LINK:</span>         <a href="https://your-live-site.com" target="_blank">your-live-site.com</a>
+`,
+                socials: `
+<br><span class="comment">// Network nodes scanned. Social vectors identified.</span><br>
+<span class="accent">LINKEDIN:</span>     <a href="https://linkedin.com/in/yourprofile" target="_blank">linkedin.com/in/yourprofile</a><br>
+<span class="accent">GITHUB:</span>       <a href="https://github.com/yourusername" target="_blank">github.com/yourusername</a>
+`,
+                contact: `
+<br><span class="comment">// Secure comms channel established.</span><br>
+<span class="accent">EMAIL:</span>        <a href="mailto:your.email@example.com">your.email@example.com</a>
+`
+            };
+
+            const fluff = [
+                'Establishing connection...', 'Scanning ports...', 'Bypassing firewall...', '[OK]', 'Injecting payload...', 'Gaining root...', '[OK]', 'Accessing filesystem...', 'Searching...', 'Decrypting...', '[SUCCESS]'
+            ];
+            
+            // ========================= CORE LOGIC =========================
+
+            function getRandomDelay(min, max) { return Math.random() * (max - min) + min; }
+
+            function typeText(text, element, speed, callback) {
+                document.body.classList.add('typing');
+                let i = 0;
+                element.innerHTML = '';
+                const typing = setInterval(() => {
+                    if (i < text.length) {
+                        const char = text.charAt(i);
+                        if (char === '<') {
+                            const endIndex = text.indexOf('>', i);
+                            element.innerHTML += text.substring(i, endIndex + 1);
+                            i = endIndex;
+                        } else {
+                            element.innerHTML += char;
+                        }
+                        i++;
+                        window.scrollTo(0, document.body.scrollHeight);
+                    } else {
+                        clearInterval(typing);
+                        document.body.classList.remove('typing');
+                        if (callback) callback();
+                    }
+                }, speed);
+            }
+
+            function showPrompt() {
+                const promptElement = document.createElement('div');
+                promptElement.classList.add('prompt-line');
+                promptElement.innerHTML = `<br><span class="prompt">user@turjo-sec:~$</span>`;
+                output.appendChild(promptElement);
+                window.scrollTo(0, document.body.scrollHeight);
+            }
+
+            function updateVisibleCommands(nextCommands) {
+                currentVisibleCommands = nextCommands;
+                document.querySelectorAll('#commands button').forEach(b => b.classList.remove('visible'));
+                currentVisibleCommands.forEach(cmd => {
+                    const button = document.querySelector(`button[data-command="${cmd}"]`);
+                    if (button) button.classList.add('visible');
+                });
+            }
+
+            async function runCommand(button) {
+                const command = button.dataset.command;
+                const commandText = button.textContent;
+                updateVisibleCommands([]);
+                
+                const lastPromptLine = output.querySelector('.prompt-line:last-child');
+                if(lastPromptLine) {
+                    const commandSpan = document.createElement('span');
+                    commandSpan.className = 'command-text';
+                    commandSpan.textContent = commandText;
+                    lastPromptLine.appendChild(commandSpan);
+                }
+
+                // Hacking Fluff Logic
+                const fluffElement = document.createElement('div');
+                fluffElement.className = 'hacker-fluff';
+                output.appendChild(fluffElement);
+                for (const line of fluff) {
+                    await new Promise(resolve => setTimeout(resolve, FLUFF_DELAY));
+                    fluffElement.innerHTML += line + '<br>';
+                    window.scrollTo(0, document.body.scrollHeight);
+                }
+                fluffElement.style.display = 'none';
+
+                const payloadElement = document.createElement('div');
+                output.appendChild(payloadElement);
+                
+                let finalContent = content[command];
+                let callback = () => {
+                    const nextCommand = button.dataset.nextCommand;
+                    if (nextCommand) {
+                        updateVisibleCommands([nextCommand]);
+                    } else {
+                         updateVisibleCommands(['clear']);
+                    }
+                    showPrompt();
+                };
+                
+                if (command === 'contact') {
+                    finalContent += `<br><br><span class='comment'>> MISSION COMPLETE.</span>`;
+                }
+                
+                typeText(finalContent, payloadElement, SPEED_PAYLOAD, callback);
+            }
+
+            async function getUserInfo() {
+                const now = new Date().toLocaleString();
+                let ipData = {};
+                try {
+                    // This public token is for demonstration. For a real project, get your own free token from ipinfo.io
+                    const res = await fetch("https://ipinfo.io/json?token=dc34258ac88db2");
+                    ipData = await res.json();
+                } catch (err) { /* Silently fail if fetch is blocked */ }
+
+                const infoHTML = `
+                Your Info:<br>
+                IP: ${ipData.ip || 'Unavailable'}<br>
+                Country: ${ipData.country || 'Unavailable'}<br>
+                ISP: ${ipData.org || 'Unavailable'}<br>
+                Date/Time: ${now}
+                `;
+                document.getElementById('user-info-container').innerHTML = infoHTML;
+            }
+            
+            async function runPreloader() {
+                getUserInfo(); // Start fetching user info immediately
+                const bootSequence = [
+                    { text: 'Initializing kernel...', id: 0 },
+                    { text: 'Cloudflare authentication failed.', class: 'error', id: 1 },
+                    { text: 'Root access granted.', id: 2 },
+                    { text: 'Loading terminal', dots: true, id: 3 }
+                ];
+                for(const msg of bootSequence){
+                    await new Promise(resolve => setTimeout(resolve, getRandomDelay(400, 1000)));
+                    const line = document.createElement('span');
+                    line.style.animationDelay = `${msg.id * 0.1}s`;
+                    line.textContent = msg.text;
+                    if (msg.class) line.classList.add(msg.class);
+                    if (msg.dots) line.classList.add('dots');
+                    preloaderText.appendChild(line);
+                }
+                
+                document.getElementById('user-info-container').style.opacity = '1';
+
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                document.getElementById('preloader').style.opacity = '0';
+                await new Promise(resolve => setTimeout(resolve, 500));
+                document.getElementById('preloader').style.display = 'none';
+                
+                terminalContainer.classList.remove('hidden');
+                initTerminal();
+            }
+
+            function initTerminal() {
+                output.innerHTML = '';
+                const initialMessage = document.createElement('div');
+                output.appendChild(initialMessage);
+                typeText('Connection established. Welcome, user. Execute commands to proceed.', initialMessage, SPEED_PAYLOAD, () => {
+                    showPrompt();
+                    updateVisibleCommands(['about']);
+                });
+            }
+
+            commandsDiv.addEventListener('click', (e) => {
+                const button = e.target;
+                if (button.tagName === 'BUTTON' && button.classList.contains('visible')) {
+                    if(button.dataset.command === 'clear') {
+                        initTerminal();
+                    } else {
+                        runCommand(button);
+                    }
+                }
+            });
+            
+            runPreloader();
+        });
+    </script>
+</body>
+</html>
